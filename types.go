@@ -173,9 +173,11 @@ func (file *Special) AddChanges(specialType string, modified time.Time) {
 	}
 }
 
-type Change uint8
+type Change int8
 
 const (
+	Invalid Change = -1
+
 	Removed Change = iota
 	Added
 	Changed
@@ -183,3 +185,22 @@ const (
 	NoChange
 	Failed
 )
+
+func (c Change) String() string {
+	switch c {
+	case Removed:
+		return "removed"
+	case Added:
+		return "added"
+	case Changed:
+		return "changed"
+	case TimestampChanged:
+		return "timestamp changed"
+	case NoChange:
+		return "no change"
+	case Failed:
+		return "failed"
+	default:
+		return "unknown"
+	}
+}

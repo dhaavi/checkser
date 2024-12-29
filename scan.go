@@ -18,16 +18,19 @@ type Scan struct {
 	updatedAt time.Time
 	updatedBy string
 
-	Stats struct {
-		FoundDirs    uint64
-		FoundFiles   uint64
-		FoundSpecial uint64
+	Stats *Stats
+}
 
-		Errors uint64
+func (s *Stats) notify() {
+	if s.live {
+		select {
+		case s.signal <- struct{}{}:
+		default:
+		}
 	}
 }
 
-func ScanDir(dir string) (*Scan, error) {
+func ScanDir(dir string, liveUpdates bool) (*Scan, error) {
 	// Get hostname for updated by.
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -39,6 +42,14 @@ func ScanDir(dir string) (*Scan, error) {
 		rootDir:   dir,
 		updatedAt: time.Now(),
 		updatedBy: hostname,
+		Stats: &Stats{
+			live: liveUpdates,
+		},
+	}
+
+	// Init live signal.
+	if scan.Stats.live {
+		scan.Stats.signal = make(chan struct{}, 1)
 	}
 
 	// Scan root dir.
@@ -58,8 +69,10 @@ func (scan *Scan) dirs(cs *Checksums) {
 	for _, dir := range cs.Directories {
 		cs, err := scan.dir(dir.Path, dir)
 		if err != nil {
+			dir.Change = Failed
 			dir.ErrMsgs = append(dir.ErrMsgs, fmt.Sprintf("failed to scan dir: %s", err))
-			scan.Stats.Errors++
+			scan.Stats.FindingErrors.Add(1)
+			scan.Stats.notify()
 		} else {
 			dir.Checksums = cs
 
@@ -70,6 +83,8 @@ func (scan *Scan) dirs(cs *Checksums) {
 }
 
 func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
+	stats := scan.Stats
+
 	// Read dir.
 	entries, err := os.ReadDir(path)
 	if err != nil {
@@ -102,7 +117,9 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 				pathDir.Verified = true
 			} else {
 				pathDir.ErrMsgs = append(pathDir.ErrMsgs, "dir integrity violated: checksum did not match, possibly checkser was used only on subset of data")
-				scan.Stats.Errors++
+
+				stats.FindingErrors.Add(1)
+				stats.notify()
 			}
 		}
 
@@ -120,7 +137,8 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 			// Ignore checksum file itself.
 
 		case entry.IsDir():
-			scan.Stats.FoundDirs++
+			stats.FoundDirs.Add(1)
+			stats.notify()
 
 			dir := cs.GetDir(entry.Name())
 			if dir == nil {
@@ -134,7 +152,8 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 			}
 
 		case entry.Type().IsRegular():
-			scan.Stats.FoundFiles++
+			stats.FoundFiles.Add(1)
+			stats.notify()
 
 			file := cs.GetFile(entry.Name())
 			if file == nil {
@@ -147,14 +166,23 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 						Change:  Failed,
 						ErrMsgs: []string{fmt.Sprintf("failed to get file info: %s", err)},
 					})
-					scan.Stats.Errors++
+
+					stats.FindingErrors.Add(1)
+					stats.notify()
 				} else {
 					cs.AddFile(&File{
-						Name:     entry.Name(),
-						Path:     filepath.Join(path, entry.Name()),
-						Size:     info.Size(),
-						Modified: info.ModTime(),
-						Change:   Added,
+						Name:   entry.Name(),
+						Path:   filepath.Join(path, entry.Name()),
+						Change: Added,
+						Changed: struct {
+							Size      int64
+							Modified  time.Time
+							Algorithm string
+							Digest    string
+						}{
+							Size:     info.Size(),
+							Modified: info.ModTime(),
+						},
 					})
 				}
 			} else {
@@ -163,14 +191,17 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 				if err != nil {
 					file.Change = Failed
 					file.ErrMsgs = []string{fmt.Sprintf("failed to get file info: %s", err)}
-					scan.Stats.Errors++
+
+					stats.FindingErrors.Add(1)
+					stats.notify()
 				} else {
 					file.AddChanges(info.Size(), info.ModTime())
 				}
 			}
 
 		default:
-			scan.Stats.FoundSpecial++
+			stats.FoundSpecial.Add(1)
+			stats.notify()
 
 			// Get special type.
 			var specialType string
@@ -200,14 +231,21 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 						Change:  Failed,
 						ErrMsgs: []string{fmt.Sprintf("failed to get file info: %s", err)},
 					})
-					scan.Stats.Errors++
+
+					stats.FindingErrors.Add(1)
+					stats.notify()
 				} else {
 					cs.AddSpecialFile(&Special{
-						Name:     entry.Name(),
-						Path:     filepath.Join(path, entry.Name()),
-						Type:     specialType,
-						Modified: info.ModTime(),
-						Change:   Added,
+						Name:   entry.Name(),
+						Path:   filepath.Join(path, entry.Name()),
+						Change: Added,
+						Changed: struct {
+							Type     string
+							Modified time.Time
+						}{
+							Type:     specialType,
+							Modified: info.ModTime(),
+						},
 					})
 				}
 			} else {
@@ -216,7 +254,9 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 				if err != nil {
 					specialFile.Change = Failed
 					specialFile.ErrMsgs = []string{fmt.Sprintf("failed to get file info: %s", err)}
-					scan.Stats.Errors++
+
+					stats.FindingErrors.Add(1)
+					stats.notify()
 				} else {
 					specialFile.AddChanges(specialType, info.ModTime())
 				}
