@@ -12,38 +12,62 @@ import (
 var ChecksumFilename = ".checkser.yml"
 
 type Scan struct {
+	cfg ScanConfig
+
 	rootDir string
 	rootSum *Checksums
 
 	updatedAt time.Time
 	updatedBy string
 
-	Stats *Stats
+	Stats     *Stats
+	writeErrs []string
 }
 
-func (s *Stats) notify() {
-	if s.live {
-		select {
-		case s.signal <- struct{}{}:
-		default:
-		}
-	}
+type ScanConfig struct {
+	// DefaultHash sets the default hash to use for new files.
+	DefaultHash Hash
+
+	// Rebuild completely rebuilds all checksums.
+	// All files are digested.
+	// All checksum files rewritten.
+	Rebuild bool
+
+	// DigestAll forces all files to be digested.
+	// By default only files that have changed in size or modification time are digested.
+	DigestAll bool
+
+	// LiveUpdates enabled live update signalling using LiveUpdateSignal().
+	// As stats are atomic there might inconsistencies during operation.
+	LiveUpdates bool
 }
 
-func ScanDir(dir string, liveUpdates bool) (*Scan, error) {
+func ScanDir(dir string, cfg ScanConfig) (*Scan, error) {
 	// Get hostname for updated by.
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = "unknown"
 	}
 
+	// Check config.
+	switch {
+	case string(cfg.DefaultHash) == "":
+		cfg.DefaultHash = DefaultHash
+	case !cfg.DefaultHash.IsValid():
+		return nil, ErrInvalidHashAlg
+	}
+	if cfg.Rebuild {
+		cfg.DigestAll = true
+	}
+
 	// Create new scan.
 	scan := &Scan{
+		cfg:       cfg,
 		rootDir:   dir,
-		updatedAt: time.Now(),
+		updatedAt: time.Now().Round(time.Second),
 		updatedBy: hostname,
 		Stats: &Stats{
-			live: liveUpdates,
+			live: cfg.LiveUpdates,
 		},
 	}
 
@@ -96,7 +120,9 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 	idx := slices.IndexFunc(entries, func(entry os.DirEntry) bool {
 		return entry.Name() == ChecksumFilename
 	})
-	if idx > 0 {
+	if idx >= 0 {
+		stats.FoundChecksums.Add(1)
+
 		// Load checksum file from dir.
 		checksumData, err := os.ReadFile(filepath.Join(path, entries[idx].Name()))
 		if err != nil {
@@ -117,6 +143,7 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 				pathDir.Verified = true
 			} else {
 				pathDir.ErrMsgs = append(pathDir.ErrMsgs, "dir integrity violated: checksum did not match, possibly checkser was used only on subset of data")
+				pathDir.writeChecksums = true // Force re-write.
 
 				stats.FindingErrors.Add(1)
 				stats.notify()
@@ -143,11 +170,13 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 			dir := cs.GetDir(entry.Name())
 			if dir == nil {
 				cs.AddDir(&Directory{
-					Name:   entry.Name(),
-					Path:   filepath.Join(path, entry.Name()),
-					Change: Added,
+					Name:           entry.Name(),
+					Path:           filepath.Join(path, entry.Name()),
+					Change:         Added,
+					writeChecksums: true, // Force write flag on new dirs.
 				})
 			} else {
+				dir.Path = filepath.Join(path, entry.Name())
 				dir.Change = NoChange
 			}
 
@@ -189,12 +218,14 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 				// Gather Info
 				info, err := entry.Info()
 				if err != nil {
+					file.Path = filepath.Join(path, entry.Name())
 					file.Change = Failed
 					file.ErrMsgs = []string{fmt.Sprintf("failed to get file info: %s", err)}
 
 					stats.FindingErrors.Add(1)
 					stats.notify()
 				} else {
+					file.Path = filepath.Join(path, entry.Name())
 					file.AddChanges(info.Size(), info.ModTime())
 				}
 			}
@@ -252,12 +283,14 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 				// Gather Info
 				info, err := entry.Info()
 				if err != nil {
+					specialFile.Path = filepath.Join(path, entry.Name())
 					specialFile.Change = Failed
 					specialFile.ErrMsgs = []string{fmt.Sprintf("failed to get file info: %s", err)}
 
 					stats.FindingErrors.Add(1)
 					stats.notify()
 				} else {
+					specialFile.Path = filepath.Join(path, entry.Name())
 					specialFile.AddChanges(specialType, info.ModTime())
 				}
 			}
@@ -265,4 +298,8 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 	}
 
 	return cs, nil
+}
+
+func (scan *Scan) WriteErrors() []string {
+	return scan.writeErrs
 }

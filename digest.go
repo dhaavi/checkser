@@ -2,11 +2,11 @@ package checkser
 
 import "fmt"
 
-func (scan *Scan) DigestFiles(quick bool) {
-	scan.digest(scan.rootSum, quick)
+func (scan *Scan) DigestFiles() {
+	scan.digest(scan.rootSum)
 }
 
-func (scan *Scan) digest(cs *Checksums, quick bool) {
+func (scan *Scan) digest(cs *Checksums) {
 	stats := scan.Stats
 
 files:
@@ -18,8 +18,8 @@ files:
 		case Added, Changed, TimestampChanged:
 			// Always digest.
 		case NoChange:
-			// Only digest if not in quick mode.
-			if quick {
+			// Only digest if digest all is enabled.
+			if !scan.cfg.DigestAll {
 				stats.DigestSkipped.Add(1)
 				stats.notify()
 				continue files
@@ -33,7 +33,12 @@ files:
 		// Get existing hash or use default.
 		h := Hash(file.Algorithm)
 		if !h.IsValid() {
-			h = DefaultHash
+			h = scan.cfg.DefaultHash
+		}
+
+		// Check if the default hash is being forced.
+		if scan.cfg.Rebuild {
+			h = scan.cfg.DefaultHash
 		}
 
 		// Digest file.
@@ -44,6 +49,8 @@ files:
 
 			stats.DigestErrors.Add(1)
 			stats.notify()
+
+			continue files
 		}
 
 		// Write new hash sum to file.
@@ -68,7 +75,7 @@ files:
 			// Never digest.
 		default:
 			// Digest everything else.
-			scan.digest(dir.Checksums, quick)
+			scan.digest(dir.Checksums)
 		}
 	}
 }

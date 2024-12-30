@@ -3,20 +3,22 @@ package checkser
 import "fmt"
 
 func (scan *Scan) FmtFindStatus() []string {
-	lines := make([]string, 4)
+	lines := make([]string, 5)
 	lines[0] = fmt.Sprintf("Found Dirs: %d", scan.Stats.FoundDirs.Load())
 	lines[1] = fmt.Sprintf("Found Files: %d", scan.Stats.FoundFiles.Load())
 	lines[2] = fmt.Sprintf("Found Special: %d", scan.Stats.FoundSpecial.Load())
-	lines[3] = fmt.Sprintf("Errors: %d", scan.Stats.FindingErrors.Load())
+	lines[3] = fmt.Sprintf("Found Checksums: %d", scan.Stats.FoundChecksums.Load())
+	lines[4] = fmt.Sprintf("Errors: %d", scan.Stats.FindingErrors.Load())
 	return lines
 }
 
 func (scan *Scan) FmtFindStatusProgress() string {
 	return fmt.Sprintf(
-		"Scanning... (found %d dirs, %d files, %d other with %d errors)",
+		"Scanning... (found %d dirs, %d files, %d other, %d checksums with %d errors)",
 		scan.Stats.FoundDirs.Load(),
 		scan.Stats.FoundFiles.Load(),
 		scan.Stats.FoundSpecial.Load(),
+		scan.Stats.FoundChecksums.Load(),
 		scan.Stats.FindingErrors.Load(),
 	)
 }
@@ -31,8 +33,10 @@ func (scan *Scan) FmtDigestStatus() []string {
 
 func (scan *Scan) FmtDigestStatusProgress() string {
 	return fmt.Sprintf(
-		"Digesting... (%d digested, %d skipped with %d errors)",
+		"Digesting... (%.0f%%, %d/%d digested, %d skipped with %d errors)",
+		float64(scan.Stats.DigestFiles.Load())*100/float64(scan.Stats.FoundFiles.Load()),
 		scan.Stats.DigestFiles.Load(),
+		scan.Stats.FoundFiles.Load(),
 		scan.Stats.DigestSkipped.Load(),
 		scan.Stats.DigestErrors.Load(),
 	)
@@ -83,6 +87,23 @@ func (scan *Scan) FmtChangeStatus() []string {
 		scan.Stats.Special.Failed.Load(),
 	)
 	return lines
+}
+
+func (scan *Scan) FmtWriteStatus() []string {
+	lines := make([]string, 2)
+	lines[0] = fmt.Sprintf("Written: %d", scan.Stats.WriteDone.Load())
+	lines[1] = fmt.Sprintf("Errors: %d", scan.Stats.WriteErrors.Load())
+	return lines
+}
+
+func (scan *Scan) FmtWriteStatusProgress() string {
+	return fmt.Sprintf(
+		"Writing Checksum Files... (%.0f%%, %d/%d written with %d errors)",
+		float64(scan.Stats.WriteDone.Load())*100/float64(scan.Stats.WriteToDo.Load()),
+		scan.Stats.WriteDone.Load(),
+		scan.Stats.WriteToDo.Load(),
+		scan.Stats.WriteErrors.Load(),
+	)
 }
 
 // Iterate over all files, dirs and other files.

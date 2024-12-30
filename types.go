@@ -5,9 +5,6 @@ import (
 	"time"
 )
 
-// ForceHash forces the use of a specific hash.
-var ForceHash string
-
 type Checksums struct {
 	Version int `json:"checkser,omitempty" yaml:"checkser,omitempty"`
 
@@ -52,6 +49,10 @@ func (cs *Checksums) AddFile(newFile *File) {
 }
 
 func (file *File) AddChanges(size int64, modified time.Time) {
+	// Apply.
+	file.Changed.Size = size
+	file.Changed.Modified = modified
+
 	// Check what kind of change it is when it was already seen.
 	switch {
 	case file.Size != size:
@@ -61,44 +62,6 @@ func (file *File) AddChanges(size int64, modified time.Time) {
 	default:
 		file.Change = NoChange
 	}
-}
-
-func (file *File) GetChangedDigest(force bool) error {
-	h := DefaultHash
-	switch {
-	case file.Change == Added:
-		// New File!
-	case file.Change == Changed:
-		h = Hash(file.Algorithm)
-		// File changed.
-	case file.Change == TimestampChanged:
-		h = Hash(file.Algorithm)
-		// At least the timestamp changed, so we need to check.
-	case force:
-		h = Hash(file.Algorithm)
-		// Force update!
-	default:
-		// Update not necessary, just copy the digest.
-		file.Changed.Algorithm = file.Algorithm
-		file.Changed.Digest = file.Digest
-		return nil
-	}
-
-	// Check if a specific hash is being forced.
-	// Eg. to switch all files to that hash.
-	if ForceHash != "" {
-		h = Hash(ForceHash)
-	}
-
-	// Get new digest.
-	digest, err := h.DigestFile(file.Path)
-	if err != nil {
-		return err
-	}
-	file.Changed.Algorithm = string(h)
-	file.Changed.Digest = digest
-
-	return nil
 }
 
 type Directory struct {
@@ -116,7 +79,8 @@ type Directory struct {
 		ChangedDigest    string
 	} `json:"-" yaml:"-"`
 
-	Checksums *Checksums `json:"-" yaml:"-"`
+	Checksums      *Checksums `json:"-" yaml:"-"`
+	writeChecksums bool
 }
 
 func (cs *Checksums) GetDir(name string) *Directory {
@@ -162,6 +126,10 @@ func (cs *Checksums) AddSpecialFile(newSpecialFile *Special) {
 }
 
 func (file *Special) AddChanges(specialType string, modified time.Time) {
+	// Apply.
+	file.Changed.Type = specialType
+	file.Changed.Modified = modified
+
 	// Check what kind of change it is when it was already seen.
 	switch {
 	case file.Type != specialType:
@@ -176,6 +144,7 @@ func (file *Special) AddChanges(specialType string, modified time.Time) {
 type Change int8
 
 const (
+	ErrMsgs Change = -2
 	Invalid Change = -1
 
 	Removed Change = iota

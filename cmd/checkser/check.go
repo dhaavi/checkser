@@ -29,7 +29,11 @@ func check(cmd *cobra.Command, args []string) error {
 
 	// Scan the directory for checksums and files.
 	fmt.Println("Finding files and directories...")
-	scan, err := checkser.ScanDir(dir, false)
+	scan, err := checkser.ScanDir(dir, checkser.ScanConfig{
+		DefaultHash: checkser.Hash(flagDefaultHash),
+		Rebuild:     flagRebuild,
+		DigestAll:   flagDigestAll,
+	})
 	if err != nil {
 		return fmt.Errorf("invalid directory: %w", err)
 	}
@@ -60,14 +64,15 @@ func check(cmd *cobra.Command, args []string) error {
 				return nil
 
 			case "V", "v":
-				viewDetails(scan, checkser.Failed)
+				viewDetails(scan, checkser.ErrMsgs)
 			}
 		}
+		fmt.Println("")
 	}
 
 	// Digest any needed files.
 	fmt.Println("Digesting files...")
-	scan.DigestFiles(true)
+	scan.DigestFiles()
 	for _, line := range scan.FmtDigestStatus() {
 		fmt.Println(line)
 	}
@@ -80,6 +85,25 @@ func check(cmd *cobra.Command, args []string) error {
 		fmt.Println(line)
 	}
 	fmt.Println("")
+
+	// Check if there are any changes.
+	switch {
+	case scan.Stats.FindingErrors.Load() > 0:
+	case scan.Stats.DigestErrors.Load() > 0:
+	case scan.Stats.Total.Removed.Load() > 0:
+	case scan.Stats.Total.Added.Load() > 0:
+	case scan.Stats.Total.Changed.Load() > 0:
+	case scan.Stats.Total.TimestampChanged.Load() > 0:
+	case scan.Stats.Total.Failed.Load() > 0:
+	default:
+		fmt.Printf(
+			"Checked all %d files, %d dirs and %d other. No changes found.\n",
+			scan.Stats.Files.NoChange.Load(),
+			scan.Stats.Dirs.NoChange.Load(),
+			scan.Stats.Special.NoChange.Load(),
+		)
+		return nil
+	}
 
 action:
 	for {
@@ -111,6 +135,17 @@ action:
 			viewDetails(scan, checkser.NoChange)
 		case "F", "f":
 			viewDetails(scan, checkser.Failed)
+		}
+	}
+	fmt.Println("")
+
+	// Write checksum files.
+	scan.WriteChecksumFiles()
+	fmt.Printf("Successfully written %d checksum files.\n", scan.Stats.WriteDone.Load())
+	if scan.Stats.WriteErrors.Load() > 0 {
+		fmt.Printf("Encountered %d errors during writing checksum files:\n", scan.Stats.WriteErrors.Load())
+		for _, line := range scan.WriteErrors() {
+			fmt.Println(line)
 		}
 	}
 

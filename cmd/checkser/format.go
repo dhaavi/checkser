@@ -15,36 +15,51 @@ func viewDetails(scan *checkser.Scan, filter checkser.Change) {
 		filter: filter,
 	}
 
-	// Write to tmp file for less, if available.
-	if lessIsAvailable() {
-		tmpFile, err := os.CreateTemp("", "checkser-change-view-")
-		if err != nil {
-			fmt.Printf("failed to create tmp file for viewing with less (err=%s), printing to stdout instead\n", err)
-		} else {
-			v.writer = tmpFile
-			v.filepath = tmpFile.Name()
-			defer tmpFile.Close()
-		}
+	// Print to stdout
+	if !lessIsAvailable() {
+		printViewToStdout(scan, v)
+		return
 	}
 
-	// Always fall back to stdout.
-	if v.writer == nil {
-		v.writer = os.Stdout
-		fmt.Fprintln(v.writer, "Details:")
-		defer fmt.Fprintln(v.writer, "")
+	// Create tmp file for less.
+	tmpFile, err := os.CreateTemp("", "checkser-change-view-")
+	if err != nil {
+		fmt.Printf("failed to create tmp file for viewing with less (err=%s), printing to stdout instead\n", err)
+		printViewToStdout(scan, v)
+		return
+	} else {
+		v.writer = tmpFile
+		v.filepath = tmpFile.Name()
 	}
 
 	// Write view.
 	scan.Iterate(v.formatFile, v.formatDir, v.formatSpecial)
 
-	// View tmp file with less, if used.
-	if v.filepath != "" {
-		cmd := exec.Command(lessBin, v.filepath)
-		err := cmd.Run()
-		if err != nil {
-			fmt.Printf("less exited with error: %s\n", err)
-		}
+	// Close file.
+	tmpFile.Close()
+
+	// Execute less for viewing.
+	cmd := exec.Command(lessBin, v.filepath)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err = cmd.Run()
+	if err != nil {
+		fmt.Printf("less exited with error: %s\n", err)
 	}
+
+	// Delete file after viewing.
+	_ = os.Remove(tmpFile.Name())
+}
+
+func printViewToStdout(scan *checkser.Scan, v *viewer) {
+	// Set writer.
+	v.writer = os.Stdout
+
+	// Print.
+	fmt.Fprintln(v.writer, "Details:")
+	scan.Iterate(v.formatFile, v.formatDir, v.formatSpecial)
+	fmt.Fprintln(v.writer, "")
 }
 
 type viewer struct {
@@ -54,15 +69,19 @@ type viewer struct {
 	filter checkser.Change
 }
 
-func (v *viewer) view(change checkser.Change) bool {
-	switch change {
-	case checkser.Invalid:
+func (v *viewer) view(change checkser.Change, errMsgs int) bool {
+	switch {
+	case v.filter == checkser.ErrMsgs:
+		// Filter for err msgs.
+		return errMsgs > 0
+
+	case v.filter == checkser.Invalid:
 		// Filter is disabled.
 		return true
 
-	case checkser.TimestampChanged:
+	case change == checkser.TimestampChanged:
 		// TimestampChanged is always included in Changed.
-		return v.filter == checkser.Changed
+		return checkser.Changed == v.filter
 
 	default:
 		// Check of filter matches.
@@ -71,7 +90,7 @@ func (v *viewer) view(change checkser.Change) bool {
 }
 
 func (v *viewer) formatFile(file *checkser.File) {
-	if !v.view(file.Change) {
+	if !v.view(file.Change, len(file.ErrMsgs)) {
 		return
 	}
 
@@ -93,7 +112,7 @@ func (v *viewer) formatFile(file *checkser.File) {
 }
 
 func (v *viewer) formatDir(dir *checkser.Directory) {
-	if !v.view(dir.Change) {
+	if !v.view(dir.Change, len(dir.ErrMsgs)) {
 		return
 	}
 
@@ -106,7 +125,7 @@ func (v *viewer) formatDir(dir *checkser.Directory) {
 }
 
 func (v *viewer) formatSpecial(special *checkser.Special) {
-	if !v.view(special.Change) {
+	if !v.view(special.Change, len(special.ErrMsgs)) {
 		return
 	}
 
@@ -141,4 +160,8 @@ func lessIsAvailable() bool {
 	})
 
 	return lessBin != ""
+}
+
+func resetLine() {
+	fmt.Println("033[0A033[2K\r")
 }

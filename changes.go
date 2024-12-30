@@ -3,10 +3,11 @@ package checkser
 import "sync/atomic"
 
 type Stats struct {
-	FoundDirs     atomic.Uint64
-	FoundFiles    atomic.Uint64
-	FoundSpecial  atomic.Uint64
-	FindingErrors atomic.Uint64
+	FoundDirs      atomic.Uint64
+	FoundFiles     atomic.Uint64
+	FoundSpecial   atomic.Uint64
+	FoundChecksums atomic.Uint64
+	FindingErrors  atomic.Uint64
 
 	DigestFiles   atomic.Uint64
 	DigestSkipped atomic.Uint64
@@ -18,8 +19,9 @@ type Stats struct {
 	Special ChangeSet
 	Total   ChangeSet
 
-	WriteChecksums atomic.Uint64
-	WriteErrors    atomic.Uint64
+	WriteToDo   atomic.Uint64
+	WriteDone   atomic.Uint64
+	WriteErrors atomic.Uint64
 
 	live   bool
 	signal chan struct{}
@@ -32,6 +34,21 @@ type ChangeSet struct {
 	TimestampChanged atomic.Uint64
 	NoChange         atomic.Uint64
 	Failed           atomic.Uint64
+}
+
+func (s *Stats) notify() {
+	if s.live {
+		select {
+		case s.signal <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// LiveUpdateSignal signals that stats have changed and can be read again.
+// As stats are atomic there might inconsistencies during operation.
+func (scan *Scan) LiveUpdateSignal() <-chan struct{} {
+	return scan.Stats.signal
 }
 
 func (scan *Scan) CalculateChangeStats() {
