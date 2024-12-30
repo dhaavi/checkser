@@ -31,6 +31,9 @@ func run(_ *cobra.Command, args []string) error {
 		DigestAll:   flagDigestAll || runVerify,
 		LiveUpdates: runInteractive,
 	})
+	if err != nil {
+		return fmt.Errorf("invalid config: %w", err)
+	}
 
 	// Scan the directory for checksums and files.
 	stopLive := func() {}
