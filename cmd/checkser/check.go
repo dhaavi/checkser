@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,17 +12,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func init() {
-	rootCmd.AddCommand(checkCmd)
-}
+var (
+	runInteractive bool
+	runUpdate      bool
+	runVerify      bool
+)
 
-var checkCmd = &cobra.Command{
-	Use:  "check [dir]",
-	RunE: check,
-	Args: cobra.ExactArgs(1),
-}
-
-func check(cmd *cobra.Command, args []string) error {
+func run(cmd *cobra.Command, args []string) error {
 	dir, err := filepath.Abs(args[0])
 	if err != nil {
 		return fmt.Errorf("invalid directory: %w", err)
@@ -32,7 +29,7 @@ func check(cmd *cobra.Command, args []string) error {
 	scan, err := checkser.ScanDir(dir, checkser.ScanConfig{
 		DefaultHash: checkser.Hash(flagDefaultHash),
 		Rebuild:     flagRebuild,
-		DigestAll:   flagDigestAll,
+		DigestAll:   flagDigestAll || runVerify,
 	})
 	if err != nil {
 		return fmt.Errorf("invalid directory: %w", err)
@@ -44,7 +41,7 @@ func check(cmd *cobra.Command, args []string) error {
 
 	// Prompt before continuing when there are errors.
 	cliReader := bufio.NewReader(os.Stdin)
-	if scan.Stats.FindingErrors.Load() > 0 {
+	if !runInteractive && scan.Stats.FindingErrors.Load() > 0 {
 	actionFind:
 		for {
 			if lessIsAvailable() {
@@ -105,39 +102,46 @@ func check(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-action:
-	for {
-		if lessIsAvailable() {
-			fmt.Printf("Apply? [Y]es, [q]uit, [v]iew changes (with less): [a]dded, [r]emoved, [c]hanged, [n]o change, [f]ailed: ")
-		} else {
-			fmt.Printf("Apply? [Y]es, [q]uit, [v]iew changes: [a]dded, [r]emoved, [c]hanged, [n]o change, [f]ailed: ")
-		}
-		line, err := cliReader.ReadString('\n')
-		if err != nil {
-			fmt.Printf("failed to read action: %s\n", err)
-		}
-		switch strings.TrimSpace(line) {
-		case "Y", "y", "":
-			break action
-
-		case "Q", "q":
-			return nil
-
-		case "V", "v":
-			viewDetails(scan, checkser.Invalid)
-		case "A", "a":
-			viewDetails(scan, checkser.Added)
-		case "R", "r":
-			viewDetails(scan, checkser.Removed)
-		case "C", "c":
-			viewDetails(scan, checkser.Changed)
-		case "N", "n":
-			viewDetails(scan, checkser.NoChange)
-		case "F", "f":
-			viewDetails(scan, checkser.Failed)
-		}
+	// Return an error if we are just verifying.
+	if runVerify {
+		return errors.New("changes or errors detected")
 	}
-	fmt.Println("")
+
+	if runInteractive {
+	action:
+		for {
+			if lessIsAvailable() {
+				fmt.Printf("Apply? [Y]es, [q]uit, [v]iew changes (with less): [a]dded, [r]emoved, [c]hanged, [n]o change, [f]ailed: ")
+			} else {
+				fmt.Printf("Apply? [Y]es, [q]uit, [v]iew changes: [a]dded, [r]emoved, [c]hanged, [n]o change, [f]ailed: ")
+			}
+			line, err := cliReader.ReadString('\n')
+			if err != nil {
+				fmt.Printf("failed to read action: %s\n", err)
+			}
+			switch strings.TrimSpace(line) {
+			case "Y", "y", "":
+				break action
+
+			case "Q", "q":
+				return nil
+
+			case "V", "v":
+				viewDetails(scan, checkser.Invalid)
+			case "A", "a":
+				viewDetails(scan, checkser.Added)
+			case "R", "r":
+				viewDetails(scan, checkser.Removed)
+			case "C", "c":
+				viewDetails(scan, checkser.Changed)
+			case "N", "n":
+				viewDetails(scan, checkser.NoChange)
+			case "F", "f":
+				viewDetails(scan, checkser.Failed)
+			}
+		}
+		fmt.Println("")
+	}
 
 	// Write checksum files.
 	scan.WriteChecksumFiles()
@@ -146,6 +150,21 @@ action:
 		fmt.Printf("Encountered %d errors during writing checksum files:\n", scan.Stats.WriteErrors.Load())
 		for _, line := range scan.WriteErrors() {
 			fmt.Println(line)
+		}
+	}
+
+	// Return an error if running update.
+	if runUpdate {
+		if scan.Stats.FindingErrors.Load() > 0 ||
+			scan.Stats.DigestErrors.Load() > 0 ||
+			scan.Stats.WriteErrors.Load() > 0 {
+			fmt.Println("")
+			return fmt.Errorf(
+				"update complete, encountered %d scan errors, %d digest errors and %d write errors",
+				scan.Stats.FindingErrors.Load(),
+				scan.Stats.DigestErrors.Load(),
+				scan.Stats.WriteErrors.Load(),
+			)
 		}
 	}
 
