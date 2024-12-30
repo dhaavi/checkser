@@ -1,0 +1,16 @@
+#!/bin/bash
+set -eo pipefail
+
+# Get version.
+VERSION="$(git tag --points-at)" || true
+test -z "$VERSION" && DEV_VERSION="$(git describe --tags --first-parent --abbrev=0)" || true
+test -n "$DEV_VERSION" && VERSION="${DEV_VERSION}_dev_build"
+test -z "$VERSION" && VERSION="dev_build"
+BUILD_SOURCE=$( ( git remote -v | cut -f2 | cut -d" " -f1 | head -n 1 ) || echo "unknown" )
+BUILD_TIME=$(date -u "+%Y-%m-%dT%H:%M:%SZ" || echo "unknown")
+
+LDFLAGS="-X main.Version=${VERSION} -X main.BuildSource=${BUILD_SOURCE} -X main.BuildTime=${BUILD_TIME}"
+
+# Build.
+export CGO_ENABLED=0
+go build -ldflags "$LDFLAGS" "$@"

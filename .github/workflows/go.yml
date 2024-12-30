@@ -1,0 +1,82 @@
+name: Go Workflow
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+    tags:        
+      - v*
+  pull_request:
+    branches:
+      - master
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  go:
+    name: Test, Build and Release on Tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '^1.22'
+
+      - name: Get dependencies
+        run: go mod download
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        continue-on-error: true
+        with:
+          version: v1.56
+          only-new-issues: true
+          args: -c ./.golangci.yml --timeout 15m
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run go test
+        run: go test ./...
+
+      - name: Build Releases
+        run: |
+          VERSION="$(git tag --points-at)"; test -z "$VERSION" && VERSION="$(git describe --tags --abbrev=0)_dev_build"; test -z "$VERSION" && VERSION="dev_build"
+          BUILD_SOURCE=$( ( git remote -v | cut -f2 | cut -d" " -f1 | head -n 1 ) || echo "unknown" )
+          BUILD_TIME=$(date -u "+%Y-%m-%dT%H:%M:%SZ" || echo "unknown")
+          LDFLAGS="-X main.Version=${VERSION} -X main.BuildSource=${BUILD_SOURCE} -X main.BuildTime=${BUILD_TIME}"
+          export CGO_ENABLED=0
+          GOOS=linux GOARCH=amd64 go build -C cmd/checkser -ldflags "$LDFLAGS" -o dist/checkser_linux_amd64
+          GOOS=linux GOARCH=arm64 go build -C cmd/checkser -ldflags "$LDFLAGS" -o dist/checkser_linux_arm64
+          GOOS=linux GOARCH=arm GOARM=7 go build -C cmd/checkser -ldflags "$LDFLAGS" -o dist/checkser_linux_armv7
+          GOOS=windows GOARCH=amd64 go build -C cmd/checkser -ldflags "$LDFLAGS" -o dist/checkser_windows_amd64.exe
+          GOOS=windows GOARCH=arm64 go build -C cmd/checkser -ldflags "$LDFLAGS" -o dist/checkser_windows_arm64.exe
+          GOOS=darwin GOARCH=amd64 go build -C cmd/checkser -ldflags "$LDFLAGS" -o dist/checkser_darwin_amd64
+          GOOS=darwin GOARCH=arm64 go build -C cmd/checkser -ldflags "$LDFLAGS" -o dist/checkser_darwin_arm64
+          cmd/checkser/dist/checkser_linux_amd64 version
+
+      - name: Publish Releases
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          draft: true
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          files: |
+            cmd/checkser/dist/checkser_linux_amd64
+            cmd/checkser/dist/checkser_linux_arm64
+            cmd/checkser/dist/checkser_linux_armv7
+            cmd/checkser/dist/checkser_windows_amd64.exe
+            cmd/checkser/dist/checkser_windows_arm64.exe
+            cmd/checkser/dist/checkser_darwin_amd64
+            cmd/checkser/dist/checkser_darwin_arm64
