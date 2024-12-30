@@ -161,7 +161,3 @@ func lessIsAvailable() bool {
 
 	return lessBin != ""
 }
-
-func resetLine() {
-	fmt.Println("033[0A033[2K\r")
-}
