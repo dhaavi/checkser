@@ -18,19 +18,29 @@ var (
 	runVerify      bool
 )
 
-func run(cmd *cobra.Command, args []string) error {
+func run(_ *cobra.Command, args []string) error {
 	dir, err := filepath.Abs(args[0])
 	if err != nil {
 		return fmt.Errorf("invalid directory: %w", err)
 	}
 
-	// Scan the directory for checksums and files.
-	fmt.Println("Finding files and directories...")
-	scan, err := checkser.ScanDir(dir, checkser.ScanConfig{
+	// Create new scan.
+	scan, err := checkser.New(dir, checkser.ScanConfig{
 		DefaultHash: checkser.Hash(flagDefaultHash),
 		Rebuild:     flagRebuild,
 		DigestAll:   flagDigestAll || runVerify,
+		LiveUpdates: runInteractive,
 	})
+
+	// Scan the directory for checksums and files.
+	stopLive := func() {}
+	if runInteractive {
+		stopLive = liveUpdates(scan, scan.FmtFindStatusProgress)
+	} else {
+		fmt.Println("Finding files and directories...")
+	}
+	err = scan.Scan()
+	stopLive()
 	if err != nil {
 		return fmt.Errorf("invalid directory: %w", err)
 	}
@@ -68,8 +78,13 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Digest any needed files.
-	fmt.Println("Digesting files...")
+	if runInteractive {
+		stopLive = liveUpdates(scan, scan.FmtDigestStatusProgress)
+	} else {
+		fmt.Println("Digesting files...")
+	}
 	scan.DigestFiles()
+	stopLive()
 	for _, line := range scan.FmtDigestStatus() {
 		fmt.Println(line)
 	}
@@ -144,7 +159,13 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Write checksum files.
+	if runInteractive {
+		stopLive = liveUpdates(scan, scan.FmtWriteStatusProgress)
+	} else {
+		fmt.Println("Writing checksum files...")
+	}
 	scan.WriteChecksumFiles()
+	stopLive()
 	fmt.Printf("Successfully written %d checksum files.\n", scan.Stats.WriteDone.Load())
 	if scan.Stats.WriteErrors.Load() > 0 {
 		fmt.Printf("Encountered %d errors during writing checksum files:\n", scan.Stats.WriteErrors.Load())

@@ -42,7 +42,7 @@ type ScanConfig struct {
 	LiveUpdates bool
 }
 
-func ScanDir(dir string, cfg ScanConfig) (*Scan, error) {
+func New(dir string, cfg ScanConfig) (*Scan, error) {
 	// Get hostname for updated by.
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -76,17 +76,21 @@ func ScanDir(dir string, cfg ScanConfig) (*Scan, error) {
 		scan.Stats.signal = make(chan struct{}, 1)
 	}
 
+	return scan, nil
+}
+
+func (scan *Scan) Scan() error {
 	// Scan root dir.
 	cs, err := scan.dir(scan.rootDir, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	scan.rootSum = cs
 
 	// Scan iteratively from here.
 	scan.dirs(cs)
 
-	return scan, nil
+	return nil
 }
 
 func (scan *Scan) dirs(cs *Checksums) {

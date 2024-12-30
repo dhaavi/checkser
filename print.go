@@ -34,9 +34,9 @@ func (scan *Scan) FmtDigestStatus() []string {
 func (scan *Scan) FmtDigestStatusProgress() string {
 	return fmt.Sprintf(
 		"Digesting... (%.0f%%, %d/%d digested, %d skipped with %d errors)",
-		float64(scan.Stats.DigestFiles.Load())*100/float64(scan.Stats.FoundFiles.Load()),
+		float64(scan.Stats.DigestFiles.Load())*100/float64(scan.Stats.FoundFiles.Load()-scan.Stats.DigestSkipped.Load()),
 		scan.Stats.DigestFiles.Load(),
-		scan.Stats.FoundFiles.Load(),
+		scan.Stats.FoundFiles.Load()-scan.Stats.DigestSkipped.Load(),
 		scan.Stats.DigestSkipped.Load(),
 		scan.Stats.DigestErrors.Load(),
 	)
