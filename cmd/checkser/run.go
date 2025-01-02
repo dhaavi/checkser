@@ -54,7 +54,7 @@ func run(_ *cobra.Command, args []string) error {
 
 	// Prompt before continuing when there are errors.
 	cliReader := bufio.NewReader(os.Stdin)
-	if !runInteractive && scan.Stats.FindingErrors.Load() > 0 {
+	if runInteractive && scan.Stats.FindingErrors.Load() > 0 {
 	actionFind:
 		for {
 			if lessIsAvailable() {
