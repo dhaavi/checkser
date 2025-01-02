@@ -166,26 +166,26 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 	// Go through die entries and collect info.
 	for _, entry := range entries {
 		// Normalize name.
-		entryName := norm.NFC.String(entry.Name())
+		cleanName := norm.NFC.String(entry.Name())
 
 		switch {
-		case entryName == ChecksumFilename:
+		case cleanName == ChecksumFilename:
 			// Ignore checksum file itself.
 
 		case entry.IsDir():
 			stats.FoundDirs.Add(1)
 			stats.notify()
 
-			dir := cs.GetDir(entryName)
+			dir := cs.GetDir(cleanName)
 			if dir == nil {
 				cs.AddDir(&Directory{
-					Name:           entryName,
-					Path:           filepath.Join(path, entryName),
+					Name:           cleanName,
+					Path:           filepath.Join(path, entry.Name()),
 					Change:         Added,
 					writeChecksums: true, // Force write flag on new dirs.
 				})
 			} else {
-				dir.Path = filepath.Join(path, entryName)
+				dir.Path = filepath.Join(path, entry.Name())
 				dir.Change = NoChange
 			}
 
@@ -193,14 +193,14 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 			stats.FoundFiles.Add(1)
 			stats.notify()
 
-			file := cs.GetFile(entryName)
+			file := cs.GetFile(cleanName)
 			if file == nil {
 				// Gather Info
 				info, err := entry.Info()
 				if err != nil {
 					cs.AddFile(&File{
-						Name:    entryName,
-						Path:    filepath.Join(path, entryName),
+						Name:    cleanName,
+						Path:    filepath.Join(path, entry.Name()),
 						Change:  Failed,
 						ErrMsgs: []string{fmt.Sprintf("failed to get file info: %s", err)},
 					})
@@ -209,8 +209,8 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 					stats.notify()
 				} else {
 					cs.AddFile(&File{
-						Name:   entryName,
-						Path:   filepath.Join(path, entryName),
+						Name:   cleanName,
+						Path:   filepath.Join(path, entry.Name()),
 						Change: Added,
 						Changed: struct {
 							Size      int64
@@ -227,14 +227,14 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 				// Gather Info
 				info, err := entry.Info()
 				if err != nil {
-					file.Path = filepath.Join(path, entryName)
+					file.Path = filepath.Join(path, entry.Name())
 					file.Change = Failed
 					file.ErrMsgs = []string{fmt.Sprintf("failed to get file info: %s", err)}
 
 					stats.FindingErrors.Add(1)
 					stats.notify()
 				} else {
-					file.Path = filepath.Join(path, entryName)
+					file.Path = filepath.Join(path, entry.Name())
 					file.AddChanges(info.Size(), info.ModTime())
 				}
 			}
@@ -260,14 +260,14 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 				specialType = "other"
 			}
 
-			specialFile := cs.GetSpecialFile(entryName)
+			specialFile := cs.GetSpecialFile(cleanName)
 			if specialFile == nil {
 				// Gather Info
 				info, err := entry.Info()
 				if err != nil {
 					cs.AddSpecialFile(&Special{
-						Name:    entryName,
-						Path:    filepath.Join(path, entryName),
+						Name:    cleanName,
+						Path:    filepath.Join(path, entry.Name()),
 						Change:  Failed,
 						ErrMsgs: []string{fmt.Sprintf("failed to get file info: %s", err)},
 					})
@@ -276,8 +276,8 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 					stats.notify()
 				} else {
 					cs.AddSpecialFile(&Special{
-						Name:   entryName,
-						Path:   filepath.Join(path, entryName),
+						Name:   cleanName,
+						Path:   filepath.Join(path, entry.Name()),
 						Change: Added,
 						Changed: struct {
 							Type     string
@@ -292,14 +292,14 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 				// Gather Info
 				info, err := entry.Info()
 				if err != nil {
-					specialFile.Path = filepath.Join(path, entryName)
+					specialFile.Path = filepath.Join(path, entry.Name())
 					specialFile.Change = Failed
 					specialFile.ErrMsgs = []string{fmt.Sprintf("failed to get file info: %s", err)}
 
 					stats.FindingErrors.Add(1)
 					stats.notify()
 				} else {
-					specialFile.Path = filepath.Join(path, entryName)
+					specialFile.Path = filepath.Join(path, entry.Name())
 					specialFile.AddChanges(specialType, info.ModTime())
 				}
 			}
