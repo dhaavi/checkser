@@ -301,6 +301,7 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 		}
 	}
 
+	cs.CheckMissing(path)
 	return cs, nil
 }
 

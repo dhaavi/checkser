@@ -1,6 +1,7 @@
 package checkser
 
 import (
+	"path/filepath"
 	"slices"
 	"time"
 )
@@ -141,18 +142,36 @@ func (file *Special) AddChanges(specialType string, modified time.Time) {
 	}
 }
 
+func (cs *Checksums) CheckMissing(path string) {
+	for _, file := range cs.Files {
+		if file.Change == Removed {
+			file.Path = filepath.Join(path, file.Name)
+		}
+	}
+	for _, dir := range cs.Directories {
+		if dir.Change == Removed {
+			dir.Path = filepath.Join(path, dir.Name)
+		}
+	}
+	for _, special := range cs.Specials {
+		if special.Change == Removed {
+			special.Path = filepath.Join(path, special.Name)
+		}
+	}
+}
+
 type Change int8
 
 const (
-	ErrMsgs Change = -2
-	Invalid Change = -1
-
 	Removed Change = iota
 	Added
 	Changed
 	TimestampChanged
 	NoChange
 	Failed
+
+	Invalid Change = -1
+	ErrMsgs Change = -2
 )
 
 func (c Change) String() string {
