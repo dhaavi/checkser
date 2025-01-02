@@ -58,16 +58,16 @@ func run(_ *cobra.Command, args []string) error {
 	actionFind:
 		for {
 			if lessIsAvailable() {
-				fmt.Printf("Encountered %d errors during scan - continue? [Y]es, [q]uit, [v]iew errors (with less): ", scan.Stats.FindingErrors.Load())
+				fmt.Printf("Encountered %d errors during scan - continue? [y]es, [q]uit, [v]iew errors (with less): ", scan.Stats.FindingErrors.Load())
 			} else {
-				fmt.Printf("Encountered %d errors during scan - continue? [Y]es, [q]uit, [v]iew errors: ", scan.Stats.FindingErrors.Load())
+				fmt.Printf("Encountered %d errors during scan - continue? [y]es, [q]uit, [v]iew errors: ", scan.Stats.FindingErrors.Load())
 			}
 			line, err := cliReader.ReadString('\n')
 			if err != nil {
 				fmt.Printf("failed to read action: %s\n", err)
 			}
 			switch strings.TrimSpace(line) {
-			case "Y", "y", "":
+			case "Y", "y":
 				break actionFind
 
 			case "Q", "q":
@@ -129,16 +129,16 @@ func run(_ *cobra.Command, args []string) error {
 	action:
 		for {
 			if lessIsAvailable() {
-				fmt.Printf("Apply? [Y]es, [q]uit, [v]iew changes (with less): [a]dded, [r]emoved, [c]hanged, [n]o change, [f]ailed: ")
+				fmt.Printf("Apply? [y]es, [q]uit, [v]iew changes (with less): [a]dded, [r]emoved, [c]hanged, [n]o change, [f]ailed: ")
 			} else {
-				fmt.Printf("Apply? [Y]es, [q]uit, [v]iew changes: [a]dded, [r]emoved, [c]hanged, [n]o change, [f]ailed: ")
+				fmt.Printf("Apply? [y]es, [q]uit, [v]iew changes: [a]dded, [r]emoved, [c]hanged, [n]o change, [f]ailed: ")
 			}
 			line, err := cliReader.ReadString('\n')
 			if err != nil {
 				fmt.Printf("failed to read action: %s\n", err)
 			}
 			switch strings.TrimSpace(line) {
-			case "Y", "y", "":
+			case "Y", "y":
 				break action
 
 			case "Q", "q":
