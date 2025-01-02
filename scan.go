@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"slices"
 	"time"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 var ChecksumFilename = ".checkser.yml"
@@ -163,24 +165,27 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 
 	// Go through die entries and collect info.
 	for _, entry := range entries {
+		// Normalize name.
+		entryName := norm.NFC.String(entry.Name())
+
 		switch {
-		case entry.Name() == ChecksumFilename:
+		case entryName == ChecksumFilename:
 			// Ignore checksum file itself.
 
 		case entry.IsDir():
 			stats.FoundDirs.Add(1)
 			stats.notify()
 
-			dir := cs.GetDir(entry.Name())
+			dir := cs.GetDir(entryName)
 			if dir == nil {
 				cs.AddDir(&Directory{
-					Name:           entry.Name(),
-					Path:           filepath.Join(path, entry.Name()),
+					Name:           entryName,
+					Path:           filepath.Join(path, entryName),
 					Change:         Added,
 					writeChecksums: true, // Force write flag on new dirs.
 				})
 			} else {
-				dir.Path = filepath.Join(path, entry.Name())
+				dir.Path = filepath.Join(path, entryName)
 				dir.Change = NoChange
 			}
 
@@ -188,14 +193,14 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 			stats.FoundFiles.Add(1)
 			stats.notify()
 
-			file := cs.GetFile(entry.Name())
+			file := cs.GetFile(entryName)
 			if file == nil {
 				// Gather Info
 				info, err := entry.Info()
 				if err != nil {
 					cs.AddFile(&File{
-						Name:    entry.Name(),
-						Path:    filepath.Join(path, entry.Name()),
+						Name:    entryName,
+						Path:    filepath.Join(path, entryName),
 						Change:  Failed,
 						ErrMsgs: []string{fmt.Sprintf("failed to get file info: %s", err)},
 					})
@@ -204,8 +209,8 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 					stats.notify()
 				} else {
 					cs.AddFile(&File{
-						Name:   entry.Name(),
-						Path:   filepath.Join(path, entry.Name()),
+						Name:   entryName,
+						Path:   filepath.Join(path, entryName),
 						Change: Added,
 						Changed: struct {
 							Size      int64
@@ -222,14 +227,14 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 				// Gather Info
 				info, err := entry.Info()
 				if err != nil {
-					file.Path = filepath.Join(path, entry.Name())
+					file.Path = filepath.Join(path, entryName)
 					file.Change = Failed
 					file.ErrMsgs = []string{fmt.Sprintf("failed to get file info: %s", err)}
 
 					stats.FindingErrors.Add(1)
 					stats.notify()
 				} else {
-					file.Path = filepath.Join(path, entry.Name())
+					file.Path = filepath.Join(path, entryName)
 					file.AddChanges(info.Size(), info.ModTime())
 				}
 			}
@@ -255,14 +260,14 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 				specialType = "other"
 			}
 
-			specialFile := cs.GetSpecialFile(entry.Name())
+			specialFile := cs.GetSpecialFile(entryName)
 			if specialFile == nil {
 				// Gather Info
 				info, err := entry.Info()
 				if err != nil {
 					cs.AddSpecialFile(&Special{
-						Name:    entry.Name(),
-						Path:    filepath.Join(path, entry.Name()),
+						Name:    entryName,
+						Path:    filepath.Join(path, entryName),
 						Change:  Failed,
 						ErrMsgs: []string{fmt.Sprintf("failed to get file info: %s", err)},
 					})
@@ -271,8 +276,8 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 					stats.notify()
 				} else {
 					cs.AddSpecialFile(&Special{
-						Name:   entry.Name(),
-						Path:   filepath.Join(path, entry.Name()),
+						Name:   entryName,
+						Path:   filepath.Join(path, entryName),
 						Change: Added,
 						Changed: struct {
 							Type     string
@@ -287,14 +292,14 @@ func (scan *Scan) dir(path string, pathDir *Directory) (*Checksums, error) {
 				// Gather Info
 				info, err := entry.Info()
 				if err != nil {
-					specialFile.Path = filepath.Join(path, entry.Name())
+					specialFile.Path = filepath.Join(path, entryName)
 					specialFile.Change = Failed
 					specialFile.ErrMsgs = []string{fmt.Sprintf("failed to get file info: %s", err)}
 
 					stats.FindingErrors.Add(1)
 					stats.notify()
 				} else {
-					specialFile.Path = filepath.Join(path, entry.Name())
+					specialFile.Path = filepath.Join(path, entryName)
 					specialFile.AddChanges(specialType, info.ModTime())
 				}
 			}
