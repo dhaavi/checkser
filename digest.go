@@ -15,6 +15,7 @@ files:
 		switch file.Change {
 		case Removed, Failed:
 			// Never digest.
+			continue files
 		case Added, Changed, TimestampChanged:
 			// Always digest.
 		case NoChange:
